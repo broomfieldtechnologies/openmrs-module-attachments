@@ -58,6 +58,10 @@ public class AttachmentsController {
 	@Qualifier(AttachmentsConstants.COMPONENT_COMPLEXOBS_SAVER)
 	protected ComplexObsSaver obsSaver;
 	
+	@Autowired
+	@Qualifier(AttachmentsConstants.COMPONENT_COMPLEXVIEW_HELPER)
+	protected ComplexViewHelper complexViewHelper;
+	
 	protected final Log log = LogFactory.getLog(getClass());
 	
 	@RequestMapping(value = AttachmentsConstants.LEGACY_UPLOAD_ATTACHMENT_URL, method = RequestMethod.POST)
@@ -110,11 +114,9 @@ public class AttachmentsController {
 		if (StringUtils.isEmpty(view))
 			view = AttachmentsConstants.ATT_VIEW_ORIGINAL;
 		
-		ComplexViewHelper viewHelper = context.getComplexViewHelper();
-		
 		// Getting the Core/Platform complex data object
 		Obs obs = context.getObsService().getObsByUuid(obsUuid);
-		Obs complexObs = context.getObsService().getComplexObs(obs.getObsId(), viewHelper.getView(obs, view));
+		Obs complexObs = context.getObsService().getComplexObs(obs.getObsId(), complexViewHelper.getView(obs, view));
 		ComplexData complexData = complexObs.getComplexData();
 		
 		// Switching to our complex data object
@@ -129,6 +131,7 @@ public class AttachmentsController {
 			response.addHeader("Content-Family", getContentFamily(mimeType).name()); // custom header
 			response.addHeader("File-Name", docComplexData.getTitle()); // custom header
 			response.addHeader("File-Ext", AttachmentBytesResource1_10.getExtension(docComplexData.getTitle(), mimeType)); // custom header
+			response.addHeader("Content-Disposition", "attachment");
 			switch (getContentFamily(mimeType)) {
 				default:
 					response.getOutputStream().write(docComplexData.asByteArray());

@@ -43,6 +43,8 @@ public class BaseComplexData extends ComplexData {
 		}
 		if (data instanceof byte[]) {
 			return (byte[]) data;
+		} else if (data instanceof String) {
+			return ((String) data).getBytes();
 		} else if (RenderedImage.class.isAssignableFrom(data.getClass())) {
 			RenderedImage image = (RenderedImage) data;
 			
@@ -60,7 +62,12 @@ public class BaseComplexData extends ComplexData {
 			return bytesOutStream.toByteArray();
 		} else if (InputStream.class.isAssignableFrom(data.getClass())) {
 			try {
-				return IOUtils.toByteArray((InputStream) data);
+				InputStream is = (InputStream) data;
+				byte[] bytes = IOUtils.toByteArray(is);
+				if (is.markSupported()) {
+					is.reset();
+				}
+				return bytes;
 			}
 			catch (IOException e) {
 				return emptyContent;

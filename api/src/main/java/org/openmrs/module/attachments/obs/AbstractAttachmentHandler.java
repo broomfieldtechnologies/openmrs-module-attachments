@@ -1,8 +1,14 @@
 package org.openmrs.module.attachments.obs;
 
+import static org.openmrs.module.attachments.AttachmentsConstants.ATT_VIEW_ORIGINAL;
+import static org.openmrs.module.attachments.AttachmentsConstants.ATT_VIEW_THUMBNAIL;
+import static org.openmrs.module.attachments.obs.ImageAttachmentHandler.THUMBNAIL_MAX_HEIGHT;
+import static org.openmrs.module.attachments.obs.ImageAttachmentHandler.THUMBNAIL_MAX_WIDTH;
+
 import java.io.File;
 import java.io.IOException;
-import net.coobird.thumbnailator.Thumbnails;
+import java.util.Arrays;
+
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
@@ -10,18 +16,20 @@ import org.apache.commons.logging.LogFactory;
 import org.openmrs.Obs;
 import org.openmrs.api.APIException;
 import org.openmrs.module.attachments.AttachmentsConstants;
-import static org.openmrs.module.attachments.obs.ImageAttachmentHandler.THUMBNAIL_MAX_HEIGHT;
-import static org.openmrs.module.attachments.obs.ImageAttachmentHandler.THUMBNAIL_MAX_WIDTH;
 import org.openmrs.obs.ComplexData;
 import org.openmrs.obs.ComplexObsHandler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+
+import net.coobird.thumbnailator.Thumbnails;
 
 /**
  * Double inheritance class. The actual implementation parent must be set through
  * {@link #setParentComplexObsHandler()}.
  */
 public abstract class AbstractAttachmentHandler implements ComplexObsHandler {
+	
+	private static final String[] supportedViews = { ATT_VIEW_ORIGINAL, ATT_VIEW_THUMBNAIL };
 	
 	public final static String NO_THUMBNAIL_SUFFIX = "___nothumb__";
 	
@@ -34,6 +42,14 @@ public abstract class AbstractAttachmentHandler implements ComplexObsHandler {
 	@Autowired
 	@Qualifier(AttachmentsConstants.COMPONENT_COMPLEXDATA_HELPER)
 	private ComplexDataHelper complexDataHelper;
+	
+	@Autowired
+	@Qualifier(AttachmentsConstants.COMPONENT_COMPLEXVIEW_HELPER)
+	private ComplexViewHelper complexViewHelper;
+	
+	public void setComplexViewHelper(ComplexViewHelper complexViewHelper) {
+		this.complexViewHelper = complexViewHelper;
+	}
 	
 	public AbstractAttachmentHandler() {
 		super();
@@ -63,6 +79,14 @@ public abstract class AbstractAttachmentHandler implements ComplexObsHandler {
 	 * Complex data CRUD - Save (Update)
 	 */
 	abstract protected ValueComplex saveComplexData(Obs obs, AttachmentComplexData complexData);
+	
+	public String[] getSupportedViews() {
+		return supportedViews;
+	}
+	
+	public boolean supportsView(String view) {
+		return Arrays.asList(getSupportedViews()).contains(view);
+	}
 	
 	protected void setParent(ComplexObsHandler complexObsHandler) {
 		this.parent = complexObsHandler;
@@ -99,14 +123,14 @@ public abstract class AbstractAttachmentHandler implements ComplexObsHandler {
 	 * <p>
 	 * The saveThumbnailOrRename method checks image dimension to see if the image is small enough to be
 	 * its own thumbnail. If so, it will rename the image file by appending the
-	 * <b>NO_THUMBNAIL_SUFFIX</b> to the file. Otherewise, it will create a small thumbnail file
+	 * <b>NO_THUMBNAIL_SUFFIX</b> to the file. Otherwise, it will create a small thumbnail file
 	 * alongside the original file to be used as thumbnail image.
 	 * </p>
 	 *
 	 * @param savedFile original file pointer
-	 * @param imageHight image hight
+	 * @param imageHight image height
 	 * @param imageWidth image width
-	 * @return savedFileName new renamed file name or orignal file name
+	 * @return savedFileName new renamed file name or original file name
 	 */
 	public static String saveThumbnailOrRename(File savedFile, int imageHeight, int imageWidth) {
 		
@@ -132,24 +156,14 @@ public abstract class AbstractAttachmentHandler implements ComplexObsHandler {
 		return savedFileName;
 	}
 	
-	/**
-	 * @param complexData An obs's complex data.
-	 * @return null if this is not our implementation, the custom {@link DocumentComplexData_old}
-	 *         otherwise.
-	 */
-	public static AttachmentComplexData fetchAttachmentComplexData(ComplexData complexData) {
+	public AttachmentComplexData getAttachmentComplexData(ComplexData complexData) {
 		
-		if ((complexData instanceof AttachmentComplexData) == false) {
-			return null;
+		if (!(complexData instanceof AttachmentComplexData)) {
+			return complexDataHelper.build(ValueComplex.INSTRUCTIONS_DEFAULT, complexData.getTitle(), complexData.getData(),
+			    complexDataHelper.getContentType(complexData));
 		}
 		
-		AttachmentComplexData docData = (AttachmentComplexData) complexData;
-		String instructions = docData.getInstructions();
-		if (instructions.equals(ValueComplex.INSTRUCTIONS_NONE)) {
-			return null;
-		}
-		
-		return docData;
+		return (AttachmentComplexData) complexData;
 	}
 	
 	/*
@@ -159,16 +173,13 @@ public abstract class AbstractAttachmentHandler implements ComplexObsHandler {
 	final public Obs getObs(Obs obs, String view) {
 		
 		ValueComplex valueComplex = new ValueComplex(obs.getValueComplex());
-		if (valueComplex.isOwnImplementation() == false) { // not our implementation
-			return getParent().getObs(obs, view);
-		}
 		
 		if (StringUtils.isEmpty(view)) {
 			view = AttachmentsConstants.ATT_VIEW_ORIGINAL;
 		}
 		
-		ComplexData docData = readComplexData(obs, valueComplex, view);
-		obs.setComplexData(docData);
+		ComplexData attData = readComplexData(obs, valueComplex, view);
+		obs.setComplexData(attData);
 		return obs;
 	}
 	
@@ -178,15 +189,7 @@ public abstract class AbstractAttachmentHandler implements ComplexObsHandler {
 	@Override
 	final public boolean purgeComplexData(Obs obs) {
 		
-		AttachmentComplexData complexData = fetchAttachmentComplexData(obs.getComplexData());
-		if (complexData == null) { // not our implementation
-			if (obs.getComplexData() == null) {
-				log.error("Complex data was null and hence was not purged for OBS_ID='" + obs.getObsId() + "'.");
-				return false;
-			} else {
-				return getParent().purgeComplexData(obs);
-			}
-		}
+		AttachmentComplexData complexData = getAttachmentComplexData(obs.getComplexData());
 		
 		return deleteComplexData(obs, complexData);
 	}
@@ -197,15 +200,7 @@ public abstract class AbstractAttachmentHandler implements ComplexObsHandler {
 	@Override
 	final public Obs saveObs(Obs obs) {
 		
-		AttachmentComplexData complexData = fetchAttachmentComplexData(obs.getComplexData());
-		if (complexData == null) { // not our implementation
-			if (obs.getComplexData() == null) {
-				log.error("Complex data was null and hence was not saved for OBS_ID='" + obs.getObsId() + "'.");
-				return obs;
-			} else {
-				return getParent().saveObs(obs);
-			}
-		}
+		AttachmentComplexData complexData = getAttachmentComplexData(obs.getComplexData());
 		
 		ValueComplex valueComplex = saveComplexData(obs, complexData);
 		obs.setValueComplex(valueComplex.getValueComplex());
