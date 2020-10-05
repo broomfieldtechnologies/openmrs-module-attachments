@@ -14,7 +14,7 @@
 
     <properties>
         <openMRSVersion>${openMRS2_0Version}</openMRSVersion>
-        <emrapiVersion>1.16</emrapiVersion>
+        <emrapiVersion>1.29.0-SNAPSHOT</emrapiVersion>
         <serialization.xstreamVersion>0.2.11</serialization.xstreamVersion>
         <reportingVersion>1.15.0</reportingVersion>
         <htmlformentryVersion>3.11.0</htmlformentryVersion>
